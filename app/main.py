@@ -70,7 +70,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             # send image bytes back via websocket
             await websocket.send_bytes(rendered_image_bytes)
-            
+            #
 
     except Exception as e:
         await websocket.send_text(e)
