@@ -1,0 +1,11 @@
+torch
+Pillow
+fastapi
+uvicorn
+opencv-python-headless
+websockets
+numpy
+timm
+gitpython
+setuptools
+pandas
