@@ -6,21 +6,21 @@ import cv2
 import numpy as np
 
 
-# Function to send image to YOLO and receive results
-async def send_to_yolo(image_bytes, yolo_websocket, flutter_websocket):
-    try:
-        # Send the image bytes to the YOLO WebSocket server
-        await yolo_websocket.send(image_bytes)
+# # Function to send image to YOLO and receive results
+# async def send_to_yolo(image_bytes, yolo_websocket, flutter_websocket):
+#     try:
+#         # Send the image bytes to the YOLO WebSocket server
+#         await yolo_websocket.send(image_bytes)
 
-        # Receive the processed data from YOLO
-        yolo_image_bytes = await yolo_websocket.receive_bytes()
+#         # Receive the processed data from YOLO
+#         yolo_image_bytes = await yolo_websocket.receive_bytes()
 
-        # Send the YOLO results back to the Flutter client
-        await flutter_websocket.send(yolo_image_bytes)
+#         # Send the YOLO results back to the Flutter client
+#         await flutter_websocket.send(yolo_image_bytes)
 
-    except Exception as e:
-        print(f"Error in YOLO processing: {e}")
-        await flutter_websocket.send_text(f"Error in YOLO processing: {str(e)}")
+#     except Exception as e:
+#         print(f"Error in YOLO processing: {e}")
+#         await flutter_websocket.send_text(f"Error in YOLO processing: {str(e)}")
 
 
 # Load MiDaS model (CPU inference)
@@ -38,6 +38,7 @@ myapp = FastAPI()
 @myapp.websocket("/midas")
 async def websocket_endpoint(flutter_websocket: WebSocket):
     await flutter_websocket.accept()
+    print("flutterToMidasDone")
 
     # Establish a persistent connection to YOLO
     yolo_websocket = None
@@ -48,13 +49,29 @@ async def websocket_endpoint(flutter_websocket: WebSocket):
         while True:
             # Receive the image bytes from the Flutter client
             image_bytes = await flutter_websocket.receive_bytes()
+            print("imageFromFlutterReceived")
+
+            await yolo_websocket.send("hey ilyas")
+            print("text sent to yolo")
+
+            lastResp = await yolo_websocket.recv()
+            print("lastresponse from yolo received")
+
+            await flutter_websocket.send(lastResp)
+
+
+
+
+
+################# send text to yolo
+
 
             # Process the image with YOLO using the persistent connection
-            await send_to_yolo(image_bytes, yolo_websocket, flutter_websocket)
+            # await send_to_yolo(image_bytes, yolo_websocket, flutter_websocket)
 
     except Exception as e:
-        await flutter_websocket.send_text(f"Error: {str(e)}")
-        print(f"Error: {e}")
+        await flutter_websocket.send_text(f"Error akhoyaaw : {str(e)}")
+        print(f"Error akhooooyaaa: {e}")
 
     finally:
         # Close the WebSocket connections when done or when an error occurs
