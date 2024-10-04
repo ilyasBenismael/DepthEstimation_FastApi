@@ -13,7 +13,7 @@ import asyncio
 
 
 async def send_to_yolo(image_bytes, flutter_websocket):
-    async with websockets.connect("wss://safedrivefastapi-production.up.railway.app/midas") as yolo_websocket:
+    async with websockets.connect("wss://safedrivefastapi-production.up.railway.app/yolo") as yolo_websocket:
         
         # Send the image bytes to the MiDaS WebSocket server
         await yolo_websocket.send(image_bytes)
