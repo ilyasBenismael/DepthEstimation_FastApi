@@ -37,27 +37,37 @@ myapp = FastAPI()
 
 @myapp.websocket("/midas")
 async def websocket_endpoint(flutter_websocket: WebSocket):
+
+    state = 0
     await flutter_websocket.accept()
-    print("flutterToMidasDone")
+
+    state = 1
 
     # Establish a persistent connection to YOLO
     yolo_websocket = None
     try:
+        
         # Establish the connection to YOLO once
         yolo_websocket = await websockets.connect("wss://safedrivefastapi-production.up.railway.app/yolo")
+        
+        state = 2
 
         while True:
             # Receive the image bytes from the Flutter client
             image_bytes = await flutter_websocket.receive_bytes()
+            state =3
             print("imageFromFlutterReceived")
 
             await yolo_websocket.send("hey ilyas")
+            state = 4
             print("text sent to yolo")
 
             lastResp = await yolo_websocket.recv()
+            state =5
             print("lastresponse from yolo received")
 
             await flutter_websocket.send(lastResp)
+            state = 6
 
 
 
@@ -70,7 +80,7 @@ async def websocket_endpoint(flutter_websocket: WebSocket):
             # await send_to_yolo(image_bytes, yolo_websocket, flutter_websocket)
 
     except Exception as e:
-        await flutter_websocket.send_text(f"Error akhoyaaw : {str(e)}")
+        await flutter_websocket.send_text(f"Error akhoyaaw : {str(e)} - State Variable: {state}")
         print(f"Error akhooooyaaa: {e}")
 
 
