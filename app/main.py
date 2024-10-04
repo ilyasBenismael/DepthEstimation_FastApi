@@ -73,11 +73,6 @@ async def websocket_endpoint(flutter_websocket: WebSocket):
         await flutter_websocket.send_text(f"Error akhoyaaw : {str(e)}")
         print(f"Error akhooooyaaa: {e}")
 
-    finally:
-        # Close the WebSocket connections when done or when an error occurs
-        if yolo_websocket:
-            await yolo_websocket.close()
-        await flutter_websocket.close()
 
 
             # # Convert bytes to a NumPy array
