@@ -1,65 +1,66 @@
 import torch
-from PIL import Image
-from io import BytesIO
 from fastapi import FastAPI, WebSocket
-import cv2
-import numpy as np
 import websockets
 import asyncio
+import cv2
+import numpy as np
 
 
-
-
-
-
-async def send_to_yolo(image_bytes, flutter_websocket):
-    async with websockets.connect("wss://safedrivefastapi-production.up.railway.app/yolo") as yolo_websocket:
-        
-        # Send the image bytes to the MiDaS WebSocket server
+# Function to send image to YOLO and receive results
+async def send_to_yolo(image_bytes, yolo_websocket, flutter_websocket):
+    try:
+        # Send the image bytes to the YOLO WebSocket server
         await yolo_websocket.send(image_bytes)
 
-        # Receive the image bytes from the client
+        # Receive the processed data from YOLO
         yolo_image_bytes = await yolo_websocket.receive_bytes()
-        
-        # Send the yolo_image_bytes to flutter
+
+        # Send the YOLO results back to the Flutter client
         await flutter_websocket.send(yolo_image_bytes)
 
-        # # Parse the response (assumed to be in JSON format)
-        # return rendered_image
-    
+    except Exception as e:
+        print(f"Error in YOLO processing: {e}")
+        await flutter_websocket.send_text(f"Error in YOLO processing: {str(e)}")
 
 
-
-
-# Load the MiDaS model version small
+# Load MiDaS model (CPU inference)
 midasModel = torch.hub.load("intel-isl/MiDaS", "MiDaS_small")
-
-# Load the appropriate transforms for midas
 midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
-transform = midas_transforms.small_transform 
-
-# put the model in cpu
-device = torch.device("cpu")  
+transform = midas_transforms.small_transform
+device = torch.device("cpu")
 midasModel.to(device)
-
-# make the model ready for inference and not training
 midasModel.eval()
 
 # Create FastAPI app
 myapp = FastAPI()
-    
 
 
 @myapp.websocket("/midas")
 async def websocket_endpoint(flutter_websocket: WebSocket):
     await flutter_websocket.accept()
+
+    # Establish a persistent connection to YOLO
+    yolo_websocket = None
     try:
+        # Establish the connection to YOLO once
+        yolo_websocket = await websockets.connect("wss://safedrivefastapi-production.up.railway.app/yolo")
+
         while True:
-            # Receive the image bytes from the client
+            # Receive the image bytes from the Flutter client
             image_bytes = await flutter_websocket.receive_bytes()
 
+            # Process the image with YOLO using the persistent connection
+            await send_to_yolo(image_bytes, yolo_websocket, flutter_websocket)
 
-            yolo_task = asyncio.create_task(send_to_yolo(image_bytes, flutter_websocket))
+    except Exception as e:
+        await flutter_websocket.send_text(f"Error: {str(e)}")
+        print(f"Error: {e}")
+
+    finally:
+        # Close the WebSocket connections when done or when an error occurs
+        if yolo_websocket:
+            await yolo_websocket.close()
+        await flutter_websocket.close()
 
 
             # # Convert bytes to a NumPy array
@@ -101,6 +102,3 @@ async def websocket_endpoint(flutter_websocket: WebSocket):
             # # send image bytes back via websocket
             # await flutter_websocket.send_bytes(rendered_image_bytes)
 
-    except Exception as e:
-        await flutter_websocket.send_text(e)
-        print(f"Error: {e}")
