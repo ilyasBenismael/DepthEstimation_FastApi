@@ -1,126 +1,78 @@
 import torch
 from fastapi import FastAPI, WebSocket
-import websockets
-import asyncio
 import cv2
 import numpy as np
+from PIL import Image
+from io import BytesIO
 
 
-# # Function to send image to YOLO and receive results
-# async def send_to_yolo(image_bytes, yolo_websocket, flutter_websocket):
-#     try:
-#         # Send the image bytes to the YOLO WebSocket server
-#         await yolo_websocket.send(image_bytes)
 
-#         # Receive the processed data from YOLO
-#         yolo_image_bytes = await yolo_websocket.receive_bytes()
-
-#         # Send the YOLO results back to the Flutter client
-#         await flutter_websocket.send(yolo_image_bytes)
-
-#     except Exception as e:
-#         print(f"Error in YOLO processing: {e}")
-#         await flutter_websocket.send_text(f"Error in YOLO processing: {str(e)}")
-
-
-# Load MiDaS model (CPU inference)
+####### first of all we load midas model and its transforms (the small versions)
 midasModel = torch.hub.load("intel-isl/MiDaS", "MiDaS_small")
 midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
 transform = midas_transforms.small_transform
+
+####### we set the device to cpu cuz we can't afford a gpu :(
 device = torch.device("cpu")
 midasModel.to(device)
+
+####### we set the model to run in inference mode and not training mode
 midasModel.eval()
 
-# Create FastAPI app
+#### that's our fast api
 myapp = FastAPI()
 
 
 @myapp.websocket("/midas")
 async def websocket_endpoint(flutter_websocket: WebSocket):
 
-    state = 0
     await flutter_websocket.accept()
-
-    state = 1
-
-    # Establish a persistent connection to YOLO
-    yolo_websocket = None
     try:
-        
-        # Establish the connection to YOLO once
-        yolo_websocket = await websockets.connect("wss://safedrivefastapi-production.up.railway.app/yolo")
-        
-        state = 2
-
+        ##### i will keep the loop so we keep listening for images from my flutter app 
         while True:
-            # Receive the image bytes from the Flutter client
+
+            # receive the image bytes from the Flutter client
             image_bytes = await flutter_websocket.receive_bytes()
-            state =3
-            print("imageFromFlutterReceived")
 
-            await yolo_websocket.send("hey ilyas")
-            state = 4
-            print("text sent to yolo")
+            # convert imgbytes to a numpy array
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-            lastResp = await yolo_websocket.recv()
-            state =5
-            print("lastresponse from yolo received")
+            # convert img to RGB so it can be used in the midas model
+            imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            
+            # prepare the img via transform and put it in cpu so it can be ready for midas process
+            midas_input_img = transform(imgRGB).to(device)         
+            
+            # maintain the non-gradient context when calling the prediciton (cause we are in inference 
+            # and not training)
+            with torch.no_grad():          
 
-            await flutter_websocket.send(lastResp)
-            state = 6
+                # getting the depth map in form of a pytorch Tensor
+                midasTensor = midasModel(midas_input_img)          
+           
+                # resize the prediction to match the input image size before transforms
+                midasTensor = torch.nn.functional.interpolate(
+                midasTensor.unsqueeze(1),
+                size=imgRGB.shape[:2],
+                mode="bicubic",
+                align_corners=False,
+                ).squeeze()
+        
+            # convert the prediction to a numpy array cause it's easy to handle better than a pytorch tensor
+            midasNumpy = midasTensor.cpu().numpy()
 
+            # normalize the depth map to 0-255 and make of type uint8 se we can turn it to jpeg format later
+            midasNumpy = (midasNumpy - np.nanmin(midasNumpy)) / (np.nanmax(midasNumpy) - np.nanmin(midasNumpy)) * 255.0
+            midasNumpy = np.clip(midasNumpy, 0, 255).astype(np.uint8) 
 
+            # turn the numpy img to bytes se we ca send it back
+            img_buffer = BytesIO()
+            Image.fromarray(midasNumpy).save(img_buffer, format='JPEG')
+            final_depth_image = img_buffer.getvalue()
 
-
-
-################# send text to yolo
-
-
-            # Process the image with YOLO using the persistent connection
-            # await send_to_yolo(image_bytes, yolo_websocket, flutter_websocket)
+            # send image bytes back via websocket
+            await flutter_websocket.send_bytes(final_depth_image)
 
     except Exception as e:
-        await flutter_websocket.send_text(f"Error akhoyaaw : {str(e)} - State Variable: {state}")
-        print(f"Error akhooooyaaa: {e}")
-
-
-
-            # # Convert bytes to a NumPy array
-            # nparr = np.frombuffer(image_bytes, np.uint8)
-            # img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-            # # Convert img to RGB
-            # imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            
-            # # prepare the img via transform and put it cpu so it can be ready for midas process
-            # midas_input_img = transform(imgRGB).to(device)         
-            
-            # # maintain the non-gradient context when calling the prediciton (cause we in inference)
-            # with torch.no_grad():          
-            
-            #     #getting the prediction
-            #     midasTensor = midasModel(midas_input_img)          
-           
-            #     #Resize the prediction to match the input image size before transforms
-            #     midasTensor = torch.nn.functional.interpolate(
-            #     midasTensor.unsqueeze(1),
-            #     size=imgRGB.shape[:2],
-            #     mode="bicubic",
-            #     align_corners=False,
-            #     ).squeeze()
-        
-            # #Convert the prediction to a NumPy array cause it's easy to handle better than a pytorch tensor
-            # midasNumpy = midasTensor.cpu().numpy()
-
-            # # Normalize the depth map to 0-255, and make of type uint8 se we can turn it to jpeg format later
-            # midasNumpy = (midasNumpy - np.nanmin(midasNumpy)) / (np.nanmax(midasNumpy) - np.nanmin(midasNumpy)) * 255.0
-            # midasNumpy = np.clip(midasNumpy, 0, 255).astype(np.uint8)  # Convert to uint8
-
-            # # turn the numpy img to bytes
-            # img_buffer = BytesIO()
-            # Image.fromarray(midasNumpy).save(img_buffer, format='JPEG')
-            # rendered_image_bytes = img_buffer.getvalue()
-
-            # # send image bytes back via websocket
-            # await flutter_websocket.send_bytes(rendered_image_bytes)
-
+        await flutter_websocket.send_text(f"Error : {str(e)}")
